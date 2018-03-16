@@ -14,7 +14,6 @@ log = Logger("MODELS")
 
 
 
-
 class GenerateArticleID(object):
 
     def __new__(cls):
@@ -39,26 +38,31 @@ class GenerateArticleID(object):
         self.max_article_id = mysql_client.fetch_one("SELECT MAX(ID) FROM ARTICLES")[0]
         return self.max_article_id
 
-
-
-
-
-
-def is_adminstrator(id):
-    if(id == 1):
+class ApiPermission(object):
+    def __init__(self, article_id):
+        self._artice_id = article_id
+    
+    def read_permission(self):
         return True
 
-def is_self_article(uid, article_id):
-    user_id = mysql_client.fetch_one("SELECT USERID FROM ARTICLES WHERE ID=%s", (article_id))[0]
-    if(int(uid) == int(user_id)):
-        return True
-    else:
+    def update_permission(self):
+        if g.user.is_self_article(self._artice_id):
+            return True
         return False
+
+    def delete_permission(self):
+        if(g.user.is_adminstrator()):
+            return True
+        elif(g.user.is_self_article(self._artice_id)):
+            return True
+        else:
+            return False
+
 
 class ApiArticle(object):
     def __init__(self):
         self.article_id_obj = GenerateArticleID()
-        self.user_id = g.current_user
+        self.user_id = g.user.get_id()
 
     def create_article(self, content):
         now_time = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
@@ -81,6 +85,10 @@ class ApiArticle(object):
         }
 
     def update_article(self, article_id, content):
+        permission = ApiPermission(article_id)
+        if permission.update_permission() == False:
+            return {"status": -1, "msg":"Permission denied"}
+            
         now_time = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
         try:
             mysql_client.execute("UPDATE ARTICLES SET CONTENT=%s, MODIFYTIME=%s WHERE ID=%s", (content, now_time, article_id))
@@ -100,16 +108,20 @@ class ApiArticle(object):
             }
 
     def get_article(self, article_id = None):
+        permission = ApiPermission(article_id)
+        if permission.read_permission() == False:
+            return {"status": -1, "msg":"Permission denied"}
         try:
             if(article_id):
                 content = mysql_client.fetch_one("SELECT CONTENT FROM ARTICLES WHERE ID=%s", (article_id))
                 return {"data":content[0]}
 
             else:
-                content_list = mysql_client.fetch_all("SELECT CONTENT FROM ARTICLES")
-                data = []
-                for line in content_list:
-                    data.append(line[0])
+                content_list = mysql_client.fetch_all("SELECT ID, CONTENT FROM ARTICLES")
+                data = {}
+                for article_id, content in content_list:
+                    data["url"] = url_for("api.get_article", article_id=article_id)
+                    data["content"] = content
                 return {"data":data}
 
         except Exception as e:
@@ -117,9 +129,12 @@ class ApiArticle(object):
             log.error(msg)
             return {"status":-1, "error":msg}
         
-    def delete_article(self, artice_id):
+    def delete_article(self, article_id):
+        permission = ApiPermission(article_id)
+        if permission.delete_permission() == False:
+            return {"status": -1, "msg":"Permission denied"}
         try:
-            mysql_client.execute("DELETE FROM ARTICLES WHERE ID=%s", (artice_id))
+            mysql_client.execute("DELETE FROM ARTICLES WHERE ID=%s", (article_id))
             mysql_client.commit()
         except Exception as e:
             msg = str(e)
@@ -130,25 +145,6 @@ class ApiArticle(object):
                 "link":{"all": url_for('api.get_all_article')}
             }    
 
-
-class ApiPermission(object):
-    def __init__(self, uid, article_id):
-        self._user_id = uid
-        self._artice_id = article_id
-    
-    def read_permission(self):
-        return True
-
-    def write_permission(self):
-        if(is_adminstrator(self._user_id)):
-            return True
-        elif(is_self_article(self._user_id, self._artice_id)):
-            return True
-        else:
-            return False
-
-
-
 class User(object):
 
     def __init__(self, user_id):
@@ -156,6 +152,13 @@ class User(object):
         #self.username = username
         self.id = user_id
         self.password_hash = self.get_password_hash()
+
+    @property
+    def role(self):
+        user_type = mysql_client.fetch_one("SELECT R.NAME FROM USERS U LEFT JOIN ROLE R ON U.ROLEID = R.ID WHERE U.ID=%s", (self.id))
+        if user_type != None:
+            return user_type[0]
+        return None
 
     @property
     def username(self):
@@ -197,12 +200,20 @@ class User(object):
     def get_id(self):
         return str(self.id)
 
-    @staticmethod
-    def get(user_id):
-        if user_id is not None:
-            return User(user_id)
+    def is_adminstrator(self):
+        user_type = self.role
+        log.debug(user_type)
+        if user_type == "ADMINISTRATOR":
+            return True
         else:
-            return None
+            return False
+
+    def is_self_article(self, article_id):
+        user_id = mysql_client.fetch_one("SELECT USERID FROM ARTICLES WHERE ID=%s", (article_id))[0]
+        if(int(self.id) == int(user_id)):
+            return True
+        else:
+            return False
 
 
 class RegisterUser(object):
@@ -210,6 +221,17 @@ class RegisterUser(object):
     def __init__(self):
         pass
     
+    @staticmethod
+    def register_admin(username, password):
+        if (username != None and password != None):
+            admin_id = mysql_client.fetch_one("SELECT ID FROM ROLE WHERE NAME = %s", "ADMINISTRATOR")[0]
+            password_hash = generate_password_hash(password)
+            mysql_client.execute("INSERT INTO USERS (id, nickname, passwd, roleid) VALUES(0, %s, %s, %s)", (username, password_hash, admin_id))
+            mysql_client.commit()
+            user_id = RegisterUser.get_id(username)
+            return {"username":username, "msg":"Registered Successfully" }
+        return {"username":username, "msg":"Registration failed"}
+
     @staticmethod
     def get_id(username):
         if username is not None:
@@ -222,7 +244,7 @@ class RegisterUser(object):
 
     @staticmethod   
     def verify_username(username):
-        log.debug(username)
+        #log.debug(username)
         id_info = mysql_client.fetch_one("SELECT ID FROM USERS WHERE nickname = %s", (username))
         log.debug(id_info)
         if id_info is None:
@@ -237,10 +259,9 @@ class RegisterUser(object):
         password = user_info.get("password", None)
         if (username != None and password != None):
             password_hash = generate_password_hash(password)
-            mysql_client.execute("INSERT INTO USERS (id, nickname, passwd, roleid) VALUES(0, %s, %s, 2)", (username, password_hash))
+            normal_id = mysql_client.fetch_one("SELECT ID FROM ROLE WHERE NAME = %s", "NORMAL")[0]
+            mysql_client.execute("INSERT INTO USERS (id, nickname, passwd, roleid) VALUES(0, %s, %s, %s)", (username, password_hash, normal_id))
             mysql_client.commit()
             user_id = RegisterUser.get_id(username)
             return True
         return False
-
-    

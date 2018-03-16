@@ -17,7 +17,7 @@ def create_app(config_name):
     app.config.from_object(config[config_name])
     setup_logger(app.config)
     log = Logger("APP")
-    log.debug(app.config)
+    
 
     log.debug(mysql_client.init_app(app))
 

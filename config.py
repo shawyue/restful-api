@@ -13,32 +13,6 @@ class Config:
     LOGBOOK_FORMAT_STRING ='({record.time:%Y-%m-%d %H:%M:%S}),{record.level_name},[{record.thread_name}],{record.channel}[{record.lineno}]: {record.message}'
     #simple version: format_string = '({record.time:%m-%d %H:%M:%S}){record.level_name},channel:{record.channel},line_{record.lineno}: {record.message}'
 
-class PrductConfig(Config):
-    DEBUG = False
-
-    MYSQL_HOST = "192.168.190.150"
-    MYSQL_PORT = 3306
-    MYSQL_USER = "restful"
-    MYSQL_PASSWORD = "restful"
-    MYSQL_DB = "restful"
-    MYSQL_CHARSET = "utf8"
-
-    LOGBOOK_CONSOLE = False
-    LOGBOOK_FILE = True      
-
-class DevelopConfig(Config):
-    DEBUG = True
-
-    MYSQL_HOST = "192.168.190.150"
-    MYSQL_PORT = 3306
-    MYSQL_USER = "restful"
-    MYSQL_PASSWORD = "restful"
-    MYSQL_DB = "restful"
-    MYSQL_CHARSET = "utf8"
-
-    LOGBOOK_CONSOLE = True
-    LOGBOOK_FILE = True
-
 class TestingConfig(Config):
     DEBUG = True
    
@@ -46,7 +20,7 @@ class TestingConfig(Config):
     MYSQL_PORT = 3306
     MYSQL_USER = "restful"
     MYSQL_PASSWORD = "restful"
-    MYSQL_DB = "restful"
+    MYSQL_DB = "api"
     MYSQL_CHARSET = "utf8"
 
     LOGBOOK_CONSOLE = True
@@ -55,7 +29,5 @@ class TestingConfig(Config):
 
 config = {
     'testing': TestingConfig,
-    'develop': DevelopConfig,
-    'prduct': PrductConfig,
     'default': TestingConfig
 }
